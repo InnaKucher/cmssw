@@ -152,7 +152,7 @@ process.akPu4CaloCombinedSecondaryVertexV2BJetTags.tagInfos = cms.VInputTag(
 
 # trained on CS jets
 process.CSVscikitTags.weightFile = cms.FileInPath(
-    'HeavyIonsAnalysis/JetAnalysis/data/TMVA_Btag_CsJets_PbPb_BDTG.weights.xml')
+    'HeavyIonsAnalysis/JetAnalysis/data/TMVA_Btag_CsJets_PbPb2018_BDTG.weights.xml')
 
 ###############################################################################
 
