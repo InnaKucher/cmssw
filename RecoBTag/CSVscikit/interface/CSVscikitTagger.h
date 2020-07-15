@@ -6,7 +6,8 @@
 #include "RecoBTau/JetTagComputer/interface/JetTagComputer.h"
 #include <mutex>
 #include "FWCore/Utilities/interface/ESInputTag.h"
-#include "RecoBTag/SecondaryVertex/interface/CombinedSVSoftLeptonComputer.h"
+//#include "RecoBTag/SecondaryVertex/interface/CombinedSVSoftLeptonComputer.h"
+#include "RecoBTag/SecondaryVertex/interface/CombinedSVComputer.h"
 #include "DataFormats/BTauReco/interface/TaggingVariable.h"
 #include "RecoBTau/JetTagComputer/interface/JetTagComputerRecord.h"
 
@@ -22,7 +23,7 @@ public:
   /// explicit ctor 
 	CSVscikitTagger(const edm::ParameterSet & );
 	~CSVscikitTagger();//{}
-  virtual float discriminator(const TagInfoHelper & tagInfo) const override;
+        virtual float discriminator(const TagInfoHelper & tagInfo) const override;
 	virtual void initialize(const JetTagComputerRecord & record) override;
 	
 	typedef std::vector<edm::ParameterSet> vpset;
@@ -37,7 +38,8 @@ public:
 
 private:
 	std::unique_ptr<TMVAEvaluator> mvaID_;
-	CombinedSVSoftLeptonComputer sl_computer_;
+	//CombinedSVSoftLeptonComputer sl_computer_;
+	CombinedSVComputer sl_computer_;
 	CombinedSVComputer sv_computer_;
 	std::vector<MVAVar> variables_;
 

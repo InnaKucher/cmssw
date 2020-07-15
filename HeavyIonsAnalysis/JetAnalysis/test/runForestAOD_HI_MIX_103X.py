@@ -26,13 +26,14 @@ process.HiForest.HiForestVersion = cms.string(version)
 process.source = cms.Source("PoolSource",
     duplicateCheckMode = cms.untracked.string("noDuplicateCheck"),
     fileNames = cms.untracked.vstring(
-        "file:/afs/cern.ch/work/r/rbi/public/forest/step2_RAW2DIGI_L1Reco_RECO_HI.root"
+        #"file:/afs/cern.ch/work/r/rbi/public/forest/step2_RAW2DIGI_L1Reco_RECO_HI.root"
+        "file:/eos/cms/store/group/phys_heavyions/ikucher/BJet15_AOD/F8F1CA6A-8B0E-4F4C-9588-65DF1CB4741D.root"
         ),
     )
 
 # Number of events we want to process, -1 = all events
 process.maxEvents = cms.untracked.PSet(
-    input = cms.untracked.int32(1)
+    input = cms.untracked.int32(10)
     )
 
 ###############################################################################
@@ -71,7 +72,7 @@ process.centralityBin.centralityVariable = cms.string("HFtowers")
 ###############################################################################
 
 process.TFileService = cms.Service("TFileService",
-    fileName = cms.string("HiForestAOD.root"))
+    fileName = cms.string("HiForestAOD_BJet_CSVVarsTest.root"))
 
 ###############################################################################
 # Additional Reconstruction and Analysis: Main Body

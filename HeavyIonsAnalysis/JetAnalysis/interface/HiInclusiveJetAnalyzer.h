@@ -33,7 +33,7 @@
 */
 
 
-
+const UInt_t MAXTRK  = 100000;
 
 class HiInclusiveJetAnalyzer : public edm::EDAnalyzer {
 public:
@@ -66,6 +66,8 @@ private:
   void analyzeRefSubjets(const reco::GenJet& jet);
   void analyzeGenSubjets(const reco::GenJet& jet);
   float getAboveCharmThresh(reco::TrackRefVector& selTracks, const reco::TrackIPTagInfo& ipData, int sigOrVal);
+  int isFromGSP(const reco::Candidate* c);
+  bool isHardProcess(const int status);
 
   edm::InputTag   jetTagLabel_;
   edm::EDGetTokenT<std::vector<reco::Vertex> >       vtxTag_;
@@ -108,6 +110,7 @@ private:
 
   bool doSubEvent_;
   double genPtMin_;
+  bool doCSVTaggingVars_;
   bool doLifeTimeTagging_;
   bool doLifeTimeTaggingExtras_;
   bool saveBfragments_;
@@ -121,6 +124,8 @@ private:
   double jetPtMin_;
   double jetAbsEtaMax_;
   bool doGenTaus_;
+  bool doRecoTau_;
+  bool doMuons_;
   bool doGenSym_;
   bool doSubJets_;
   bool doJetConstituents_;
@@ -140,10 +145,15 @@ private:
   std::string simpleSVHighPurBJetTags_;
   std::string combinedSVV1BJetTags_;
   std::string combinedSVV2BJetTags_;
+  std::string ncombinedSVV2BJetTags_;
+  std::string pcombinedSVV2BJetTags_;
+  std::string SVComputer_;
 
   static const int MAXJETS = 1000;
   static const int MAXTRACKS = 5000;
   static const int MAXBFRAG = 500;
+  //  static const int MAXTRK  = 10000;
+  //const UInt_t MAXTRK  = 100000;
 
   struct JRA{
 
@@ -151,6 +161,7 @@ private:
     int run;
     int evt;
     int lumi;
+    int GSP_evt;
     float vx, vy, vz;
 
     float rawpt[MAXJETS];
@@ -286,23 +297,73 @@ private:
 
     float discr_csvV1[MAXJETS];
     float discr_csvV2[MAXJETS];
-    float discr_muByIp3[MAXJETS];
-    float discr_muByPt[MAXJETS];
+    //float discr_muByIp3[MAXJETS];
+    //float discr_muByPt[MAXJETS];
     float discr_prob[MAXJETS];
-    float discr_probb[MAXJETS];
-    float discr_tcHighEff[MAXJETS];
-    float discr_tcHighPur[MAXJETS];
-    float discr_ssvHighEff[MAXJETS];
-    float discr_ssvHighPur[MAXJETS];
+    //float discr_probb[MAXJETS];
+    //float discr_tcHighEff[MAXJETS];
+    //float discr_tcHighPur[MAXJETS];
+    //float discr_ssvHighEff[MAXJETS];
+    //float discr_ssvHighPur[MAXJETS];
 
-    float ndiscr_ssvHighEff[MAXJETS];
-    float ndiscr_ssvHighPur[MAXJETS];
-    float ndiscr_csvV1[MAXJETS];
+    //float ndiscr_ssvHighEff[MAXJETS];
+    //float ndiscr_ssvHighPur[MAXJETS];
+    //float ndiscr_csvV1[MAXJETS];
     float ndiscr_csvV2[MAXJETS];
-    float ndiscr_muByPt[MAXJETS];
+    //float ndiscr_muByPt[MAXJETS];
 
-    float pdiscr_csvV1[MAXJETS];
+    //float pdiscr_csvV1[MAXJETS];
     float pdiscr_csvV2[MAXJETS];
+
+
+    //csv tagger variables
+
+    float TagVarCSV_trackJetPt[MAXJETS];
+    float TagVarCSV_jetNTracks[MAXJETS];
+    float TagVarCSV_jetNTracksEtaRel[MAXJETS];
+    float TagVarCSV_trackSumJetEtRatio[MAXJETS];
+    float TagVarCSV_trackSumJetDeltaR[MAXJETS];
+    float TagVarCSV_trackSip2dValAboveCharm[MAXJETS];
+    float TagVarCSV_trackSip2dSigAboveCharm[MAXJETS];
+    float TagVarCSV_trackSip3dValAboveCharm[MAXJETS];
+    float TagVarCSV_trackSip3dSigAboveCharm[MAXJETS];
+    float TagVarCSV_vertexCategory[MAXJETS];
+    float TagVarCSV_jetNSecondaryVertices[MAXJETS];
+    float TagVarCSV_vertexMass[MAXJETS];
+    float TagVarCSV_vertexNTracks[MAXJETS];
+    float TagVarCSV_vertexEnergyRatio[MAXJETS];
+    float TagVarCSV_vertexJetDeltaR[MAXJETS];
+    float TagVarCSV_flightDistance2dVal[MAXJETS];
+    float TagVarCSV_flightDistance2dSig[MAXJETS];
+    float TagVarCSV_flightDistance3dVal[MAXJETS];
+    float TagVarCSV_flightDistance3dSig[MAXJETS];
+
+    // per jet per track                                                                                                                                                                                   
+    int   nTrkTagVarCSV;
+    int   nTrkEtaRelTagVarCSV;
+    float   Jet_nFirstTrkTagVarCSV[MAXJETS];
+    float   Jet_nLastTrkTagVarCSV[MAXJETS];
+    float   Jet_nFirstTrkEtaRelTagVarCSV[MAXJETS];
+    float   Jet_nLastTrkEtaRelTagVarCSV[MAXJETS];
+
+    
+    float TagVarCSV_trackMomentum[MAXTRK];
+    float TagVarCSV_trackEta[MAXTRK];
+    //float TagVarCSV_trackPhi[MAXTRK];
+    float TagVarCSV_trackPtRel[MAXTRK];
+    float TagVarCSV_trackPPar[MAXTRK];
+    float TagVarCSV_trackDeltaR[MAXTRK];
+    float TagVarCSV_trackPtRatio[MAXTRK];
+    float TagVarCSV_trackPParRatio[MAXTRK];
+    float TagVarCSV_trackSip2dVal[MAXTRK];
+    float TagVarCSV_trackSip2dSig[MAXTRK];
+    float TagVarCSV_trackSip3dVal[MAXTRK];
+    float TagVarCSV_trackSip3dSig[MAXTRK];
+    float TagVarCSV_trackDecayLenVal[MAXTRK];
+    //float TagVarCSV_trackDecayLenSig[MAXTRK];
+    float TagVarCSV_trackJetDistVal[MAXTRK];
+    //float TagVarCSV_trackJetDistSig[MAXTRK];
+    float TagVarCSV_trackEtaRel[MAXTRK];
 
     int nsvtx[MAXJETS];
     int svtxntrk[MAXJETS];
@@ -366,16 +427,17 @@ private:
     float refpt[MAXJETS];
     float refeta[MAXJETS];
     float refphi[MAXJETS];
-    float refm[MAXJETS];
-    float refarea[MAXJETS];
+    int bparton_isFromGSP[MAXJETS];
+    //float refm[MAXJETS];
+    //float refarea[MAXJETS];
     float refy[MAXJETS];
     float reftau1[MAXJETS];
     float reftau2[MAXJETS];
     float reftau3[MAXJETS];
     float refsym[MAXJETS];
     int   refdroppedBranches[MAXJETS];
-    float refdphijt[MAXJETS];
-    float refdrjt[MAXJETS];
+    //float refdphijt[MAXJETS];
+    //float refdrjt[MAXJETS];
     float refparton_pt[MAXJETS];
     int refparton_flavor[MAXJETS];
     int refparton_flavorForB[MAXJETS];
@@ -414,8 +476,8 @@ private:
     float gentau1[MAXJETS];
     float gentau2[MAXJETS];
     float gentau3[MAXJETS];
-    float gendphijt[MAXJETS];
-    float gendrjt[MAXJETS];
+    //float gendphijt[MAXJETS];
+    //float gendrjt[MAXJETS];
     int gensubid[MAXJETS];
 
     float genptG[MAXJETS];

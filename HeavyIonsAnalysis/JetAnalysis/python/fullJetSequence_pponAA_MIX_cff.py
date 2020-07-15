@@ -17,34 +17,41 @@ from HeavyIonsAnalysis.JetAnalysis.jets.akPu4PFJetSequence_pponPbPb_mc_cff impor
 from HeavyIonsAnalysis.JetAnalysis.jets.akCs4PFJetSequence_pponPbPb_mc_cff import *
 from HeavyIonsAnalysis.JetAnalysis.jets.akFlowPuCs4PFJetSequence_pponPbPb_mc_cff import *
 
+from RecoJets.JetProducers.muonJetSelector_cff import *
+
 genSignalSequence = cms.Sequence(
     genParticlesForJets +
 
     hiSignalGenParticles +
     genParticlesForJetsSignal +
 
-    ak3HiGenJets +
+    #put this back for the analysis and SFs! not for b-tagging
+    #ak3HiGenJets +
     ak4HiGenJets +
 
+    myPartons +
     signalPartons +
 
-    ak3HiSignalGenJets +
+    #put this back for the analysis and SFs! not for b-tagging
+    #ak3HiSignalGenJets +
     ak4HiSignalGenJets +
 
-    ak3HiGenNjettiness +
+    #put this back for the analysis and SFs! not for b-tagging
+    #ak3HiGenNjettiness +
     ak4HiGenNjettiness
 )
 
 genCleanedSequence = cms.Sequence(
     genParticlesForJets +
-
-    ak3HiGenJets +
+    #put this back for the analysis and SFs! not for b-tagging
+    #ak3HiGenJets +
     ak4HiGenJets +
 
     myPartons +
     cleanedPartons +
 
-    ak3HiCleanedGenJets +
+    #put this back for the analysis and SFs! not for b-tagging
+    #ak3HiCleanedGenJets +
     ak4HiCleanedGenJets
 )
 
@@ -53,27 +60,39 @@ jetSequence = cms.Sequence(
 
     highPurityTracks +
 
-    akPu3CaloJets +
-    ak3PFJets +
-    akPu3PFJets +
-    akCs3PFJets +
-    akFlowPuCs3PFJets +
+    #akPu3CaloJets +
 
-    akPu4CaloJets +
+    #put this back for the analysis and SFs
+    #ak3PFJets +
+
+    #akPu3PFJets +
+    #akCs3PFJets +
+
+    #put this back for the analysis and SFs! not for b-tagging
+    #akFlowPuCs3PFJets +
+
+    #akPu4CaloJets +
     ak4PFJets +
-    akPu4PFJets +
-    akCs4PFJets +
+    ak4PFJetsWithMuon +
+    #akPu4PFJets +
+    #akCs4PFJets +
     akFlowPuCs4PFJets +
 
-    akPu3CaloJetSequence +
-    ak3PFJetSequence +
-    akPu3PFJetSequence +
-    akCs3PFJetSequence +
-    akFlowPuCs3PFJetSequence +
 
-    akPu4CaloJetSequence +
+    #akPu3CaloJetSequence +
+
+    #put this back for the analysis and SFs
+    #ak3PFJetSequence +
+
+    #akPu3PFJetSequence +
+    #akCs3PFJetSequence +
+
+    #put this back for the analysis and SFs! not for b-tagging
+    #akFlowPuCs3PFJetSequence +
+
+    #akPu4CaloJetSequence +
     ak4PFJetSequence +
-    akPu4PFJetSequence +
-    akCs4PFJetSequence +
+    #akPu4PFJetSequence +
+    #akCs4PFJetSequence +
     akFlowPuCs4PFJetSequence
 )

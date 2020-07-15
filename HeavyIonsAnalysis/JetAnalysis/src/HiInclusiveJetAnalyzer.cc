@@ -23,6 +23,17 @@
 #include "SimDataFormats/GeneratorProducts/interface/HepMCProduct.h"
 #include "SimDataFormats/HiGenData/interface/GenHIEvent.h"
 
+#include "RecoBTau/JetTagComputer/interface/GenericMVAJetTagComputer.h"
+#include "RecoBTau/JetTagComputer/interface/GenericMVAJetTagComputerWrapper.h"
+#include "RecoBTau/JetTagComputer/interface/JetTagComputer.h"
+#include "RecoBTau/JetTagComputer/interface/JetTagComputerRecord.h"
+#include "RecoBTag/SecondaryVertex/interface/CombinedSVComputer.h"
+#include "RecoBTag/SecondaryVertex/interface/TrackKinematics.h"
+#include "RecoBTag/SecondaryVertex/interface/V0Filter.h"
+#include "RecoBTag/ImpactParameter/plugins/IPProducer.h"
+#include "RecoVertex/VertexPrimitives/interface/ConvertToFromReco.h"
+#include "RecoBTag/SecondaryVertex/interface/CombinedSVSoftLeptonComputer.h"
+
 #include "fastjet/contrib/Njettiness.hh"
 #include "fastjet/AreaDefinition.hh"
 #include "fastjet/ClusterSequence.hh"
@@ -32,6 +43,8 @@
 using namespace std;
 using namespace edm;
 using namespace reco;
+
+#define ntrack_max 10000
 
 HiInclusiveJetAnalyzer::HiInclusiveJetAnalyzer(const edm::ParameterSet& iConfig)
 {
@@ -47,6 +60,8 @@ HiInclusiveJetAnalyzer::HiInclusiveJetAnalyzer(const edm::ParameterSet& iConfig)
 
   jetName_ = iConfig.getUntrackedParameter<string>("jetName");
   doGenTaus_ = iConfig.getUntrackedParameter<bool>("doGenTaus",0);
+  doRecoTau_ = iConfig.getUntrackedParameter<bool>("doRecoTau",0);
+  doMuons_ = iConfig.getUntrackedParameter<bool>("doMuons",0);
   doGenSym_ = iConfig.getUntrackedParameter<bool>("doGenSym",0);
   doSubJets_ = iConfig.getUntrackedParameter<bool>("doSubJets",0);
   doJetConstituents_ = iConfig.getUntrackedParameter<bool>("doJetConstituents", false);
@@ -89,6 +104,7 @@ HiInclusiveJetAnalyzer::HiInclusiveJetAnalyzer(const edm::ParameterSet& iConfig)
   useVtx_ = iConfig.getUntrackedParameter<bool>("useVtx",false);
   useRawPt_ = iConfig.getUntrackedParameter<bool>("useRawPt",true);
 
+  doCSVTaggingVars_ =  iConfig.getUntrackedParameter<bool>("doCSVTaggingVars",true);
   doLifeTimeTagging_ = iConfig.getUntrackedParameter<bool>("doLifeTimeTagging",false);
   doLifeTimeTaggingExtras_ = iConfig.getUntrackedParameter<bool>("doLifeTimeTaggingExtras",true);
   saveBfragments_  = iConfig.getUntrackedParameter<bool>("saveBfragments",false);
@@ -103,6 +119,23 @@ HiInclusiveJetAnalyzer::HiInclusiveJetAnalyzer(const edm::ParameterSet& iConfig)
   doExtraCTagging_ = iConfig.getUntrackedParameter<bool>("doExtraCTagging",false);
 
   genParticleSrc_ = consumes<reco::GenParticleCollection>(iConfig.getUntrackedParameter<edm::InputTag>("genParticles"));
+
+  if(doCSVTaggingVars_){
+    bTagJetName_ = iConfig.getUntrackedParameter<string>("bTagJetName");
+    ipTagInfos_ = bTagJetName_+"ImpactParameterTagInfos";
+    svTagInfos_ = bTagJetName_+"SecondaryVertexTagInfos";
+    trackCHEBJetTags_ = bTagJetName_+"TrackCountingHighEffBJetTags";
+    trackCHPBJetTags_ = bTagJetName_+"TrackCountingHighPurBJetTags";
+    jetPBJetTags_ = bTagJetName_+"JetProbabilityBJetTags";
+    jetBPBJetTags_ = bTagJetName_+"JetBProbabilityBJetTags";
+    simpleSVHighEffBJetTags_ = bTagJetName_+"SimpleSecondaryVertexHighEffBJetTags";
+    simpleSVHighPurBJetTags_ = bTagJetName_+"SimpleSecondaryVertexHighPurBJetTags";
+    combinedSVV1BJetTags_ = bTagJetName_+"CombinedSecondaryVertexBJetTags";
+    combinedSVV2BJetTags_ = bTagJetName_+"CombinedSecondaryVertexV2BJetTags";
+    ncombinedSVV2BJetTags_ = bTagJetName_+"NegativeCombinedSecondaryVertexV2BJetTags";
+    pcombinedSVV2BJetTags_ = bTagJetName_+"PositiveCombinedSecondaryVertexV2BJetTags";
+    SVComputer_               = iConfig.getParameter<std::string>("svComputer");
+  }
 
   if(doLifeTimeTagging_){
     bTagJetName_ = iConfig.getUntrackedParameter<string>("bTagJetName");
@@ -141,6 +174,8 @@ HiInclusiveJetAnalyzer::beginJob() {
   t->Branch("run",&jets_.run,"run/I");
   t->Branch("evt",&jets_.evt,"evt/I");
   t->Branch("lumi",&jets_.lumi,"lumi/I");
+  t->Branch("GSP_evt", &jets_.GSP_evt,"GSP_evt/I");
+
   if (useVtx_) {
     t->Branch("vx",&jets_.vx,"vx/F");
     t->Branch("vy",&jets_.vy,"vy/F");
@@ -175,10 +210,12 @@ HiInclusiveJetAnalyzer::beginJob() {
   t->Branch("jtPfNEM",jets_.jtPfNEM,"jtPfNEM[nref]/I");
   t->Branch("jtPfMUM",jets_.jtPfMUM,"jtPfMUM[nref]/I");
 
-  t->Branch("jttau1",jets_.jttau1,"jttau1[nref]/F");
-  t->Branch("jttau2",jets_.jttau2,"jttau2[nref]/F");
-  t->Branch("jttau3",jets_.jttau3,"jttau3[nref]/F");
-  
+  if(doRecoTau_){
+    t->Branch("jttau1",jets_.jttau1,"jttau1[nref]/F");
+    t->Branch("jttau2",jets_.jttau2,"jttau2[nref]/F");
+    t->Branch("jttau3",jets_.jttau3,"jttau3[nref]/F");
+  }
+
   if(doSubJets_) {
     t->Branch("jtSubJetPt",&jets_.jtSubJetPt);
     t->Branch("jtSubJetEta",&jets_.jtSubJetEta);
@@ -280,28 +317,77 @@ HiInclusiveJetAnalyzer::beginJob() {
     }
   }
 
+  if(doCSVTaggingVars_){
+    t->Branch("TagVarCSV_trackJetPt", jets_.TagVarCSV_trackJetPt, "TagVarCSV_trackJetPt[nref]/F");
+    t->Branch("TagVarCSV_vertexCategory", jets_.TagVarCSV_vertexCategory, "TagVarCSV_vertexCategory[nref]/F");
+    t->Branch("TagVarCSV_jetNSecondaryVertices", jets_.TagVarCSV_jetNSecondaryVertices , "TagVarCSV_jetNSecondaryVertices[nref]/F");
+    t->Branch("TagVarCSV_trackSumJetEtRatio", jets_.TagVarCSV_trackSumJetEtRatio, "TagVarCSV_trackSumJetEtRatio[nref]/F");
+    t->Branch("TagVarCSV_trackSumJetDeltaR", jets_.TagVarCSV_trackSumJetDeltaR, "TagVarCSV_trackSumJetDeltaR[nref]/F");
+    t->Branch("TagVarCSV_trackSip2dValAboveCharm", jets_.TagVarCSV_trackSip2dValAboveCharm, "TagVarCSV_trackSip2dValAboveCharm[nref]/F");
+    t->Branch("TagVarCSV_trackSip2dSigAboveCharm", jets_.TagVarCSV_trackSip2dSigAboveCharm, "TagVarCSV_trackSip2dSigAboveCharm[nref]/F");
+    t->Branch("TagVarCSV_trackSip3dValAboveCharm", jets_.TagVarCSV_trackSip3dValAboveCharm, "TagVarCSV_trackSip3dValAboveCharm[nref]/F");
+    t->Branch("TagVarCSV_trackSip3dSigAboveCharm", jets_.TagVarCSV_trackSip3dSigAboveCharm, "TagVarCSV_trackSip3dSigAboveCharm[nref]/F");
+    t->Branch("TagVarCSV_vertexMass", jets_.TagVarCSV_vertexMass, "TagVarCSV_vertexMass[nref]/F");
+    t->Branch("TagVarCSV_vertexNTracks", jets_.TagVarCSV_vertexNTracks, "TagVarCSV_vertexNTracks[nref]/F");
+    t->Branch("TagVarCSV_vertexEnergyRatio", jets_.TagVarCSV_vertexEnergyRatio, "TagVarCSV_vertexEnergyRatio[nref]/F");
+    t->Branch("TagVarCSV_vertexJetDeltaR", jets_.TagVarCSV_vertexJetDeltaR, "TagVarCSV_vertexJetDeltaR[nref]/F");
+    t->Branch("TagVarCSV_flightDistance2dVal", jets_.TagVarCSV_flightDistance2dVal, "TagVarCSV_flightDistance2dVal[nref]/F");
+    t->Branch("TagVarCSV_flightDistance2dSig", jets_.TagVarCSV_flightDistance2dSig, "TagVarCSV_flightDistance2dSig[nref]/F");
+    t->Branch("TagVarCSV_flightDistance3dVal", jets_.TagVarCSV_flightDistance3dVal, "TagVarCSV_flightDistance3dVal[nref]/F");
+    t->Branch("TagVarCSV_flightDistance3dSig", jets_.TagVarCSV_flightDistance3dSig, "TagVarCSV_flightDistance3dSig[nref]/F");
+
+    t->Branch("nTrkTagVarCSV", &jets_.nTrkTagVarCSV, "nTrkTagVarCSV/I");
+    t->Branch("nTrkEtaRelTagVarCSV", &jets_.nTrkEtaRelTagVarCSV, "nTrkEtaRelTagVarCSV/I");
+    t->Branch("TagVarCSV_jetNTracksEtaRel", jets_.TagVarCSV_jetNTracksEtaRel, "TagVarCSV_jetNTracksEtaRel[nref]/F");
+    t->Branch("Jet_nFirstTrkTagVarCSV", jets_.Jet_nFirstTrkTagVarCSV, "Jet_nFirstTrkTagVarCSV[nref]/F");
+    t->Branch("Jet_nLastTrkTagVarCSV", jets_.Jet_nLastTrkTagVarCSV, "Jet_nLastTrkTagVarCSV[nref]/F");
+    t->Branch("Jet_nFirstTrkEtaRelTagVarCSV", jets_.Jet_nFirstTrkEtaRelTagVarCSV, "Jet_nFirstTrkEtaRelTagVarCSV[nref]/F");
+    t->Branch("Jet_nLastTrkEtaRelTagVarCSV", jets_.Jet_nLastTrkEtaRelTagVarCSV, "Jet_nLastTrkEtaRelTagVarCSV[nref]/F");
+    t->Branch("TagVarCSV_jetNTracks", jets_.TagVarCSV_jetNTracks, "TagVarCSV_jetNTracks[nref]/F");
+
+    t->Branch("TagVarCSV_trackMomentum", jets_.TagVarCSV_trackMomentum, "TagVarCSV_trackMomentum[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackEta", jets_.TagVarCSV_trackEta, "TagVarCSV_trackEta[nTrkTagVarCSV]/F");
+    //t->Branch("TagVarCSV_trackPhi", jets_.TagVarCSV_trackPhi, "TagVarCSV_trackPhi[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackPtRel", jets_.TagVarCSV_trackPtRel, "TagVarCSV_trackPtRel[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackPPar", jets_.TagVarCSV_trackPPar, "TagVarCSV_trackPPar[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackDeltaR", jets_.TagVarCSV_trackDeltaR, "TagVarCSV_trackDeltaR[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackPtRatio", jets_.TagVarCSV_trackPtRatio, "TagVarCSV_trackPtRatio[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackPParRatio", jets_.TagVarCSV_trackPParRatio, "TagVarCSV_trackPParRatio[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackSip2dVal", jets_.TagVarCSV_trackSip2dVal, "TagVarCSV_trackSip2dVal[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackSip2dSig", jets_.TagVarCSV_trackSip2dSig, "TagVarCSV_trackSip2dSig[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackSip3dVal", jets_.TagVarCSV_trackSip3dVal, "TagVarCSV_trackSip3dVal[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackSip3dSig", jets_.TagVarCSV_trackSip3dSig, "TagVarCSV_trackSip3dSig[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackDecayLenVal", jets_.TagVarCSV_trackDecayLenVal, "TagVarCSV_trackDecayLenVal[nTrkTagVarCSV]/F");
+    //    t->Branch("TagVarCSV_trackDecayLenSig", jets_.TagVarCSV_trackDecayLenSig, "TagVarCSV_trackDecayLenSig[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackJetDistVal", jets_.TagVarCSV_trackJetDistVal, "TagVarCSV_trackJetDistVal[nTrkTagVarCSV]/F");
+    //    t->Branch("TagVarCSV_trackJetDistSig", jets_.TagVarCSV_trackJetDistSig, "TagVarCSV_trackJetDistSig[nTrkTagVarCSV]/F");
+    t->Branch("TagVarCSV_trackEtaRel", jets_.TagVarCSV_trackEtaRel, "TagVarCSV_trackEtaRel[nTrkTagVarCSV]/F");
+
+  }
+
+
   // b-jet discriminators
   if (doLifeTimeTagging_) {
 
-    t->Branch("discr_ssvHighEff",jets_.discr_ssvHighEff,"discr_ssvHighEff[nref]/F");
-    t->Branch("discr_ssvHighPur",jets_.discr_ssvHighPur,"discr_ssvHighPur[nref]/F");
+    //t->Branch("discr_ssvHighEff",jets_.discr_ssvHighEff,"discr_ssvHighEff[nref]/F");
+    //t->Branch("discr_ssvHighPur",jets_.discr_ssvHighPur,"discr_ssvHighPur[nref]/F");
 
     t->Branch("discr_csvV1",jets_.discr_csvV1,"discr_csvV1[nref]/F");
     t->Branch("discr_csvV2",jets_.discr_csvV2,"discr_csvV2[nref]/F");
-    t->Branch("discr_muByIp3",jets_.discr_muByIp3,"discr_muByIp3[nref]/F");
-    t->Branch("discr_muByPt",jets_.discr_muByPt,"discr_muByPt[nref]/F");
+    //t->Branch("discr_muByIp3",jets_.discr_muByIp3,"discr_muByIp3[nref]/F");
+    //t->Branch("discr_muByPt",jets_.discr_muByPt,"discr_muByPt[nref]/F");
     t->Branch("discr_prob",jets_.discr_prob,"discr_prob[nref]/F");
-    t->Branch("discr_probb",jets_.discr_probb,"discr_probb[nref]/F");
-    t->Branch("discr_tcHighEff",jets_.discr_tcHighEff,"discr_tcHighEff[nref]/F");
-    t->Branch("discr_tcHighPur",jets_.discr_tcHighPur,"discr_tcHighPur[nref]/F");
+    //t->Branch("discr_probb",jets_.discr_probb,"discr_probb[nref]/F");
+    //t->Branch("discr_tcHighEff",jets_.discr_tcHighEff,"discr_tcHighEff[nref]/F");
+    //t->Branch("discr_tcHighPur",jets_.discr_tcHighPur,"discr_tcHighPur[nref]/F");
 
-    t->Branch("ndiscr_ssvHighEff",jets_.ndiscr_ssvHighEff,"ndiscr_ssvHighEff[nref]/F");
-    t->Branch("ndiscr_ssvHighPur",jets_.ndiscr_ssvHighPur,"ndiscr_ssvHighPur[nref]/F");
-    t->Branch("ndiscr_csvV1",jets_.ndiscr_csvV1,"ndiscr_csvV1[nref]/F");
+    //t->Branch("ndiscr_ssvHighEff",jets_.ndiscr_ssvHighEff,"ndiscr_ssvHighEff[nref]/F");
+    //t->Branch("ndiscr_ssvHighPur",jets_.ndiscr_ssvHighPur,"ndiscr_ssvHighPur[nref]/F");
+    //t->Branch("ndiscr_csvV1",jets_.ndiscr_csvV1,"ndiscr_csvV1[nref]/F");
     t->Branch("ndiscr_csvV2",jets_.ndiscr_csvV2,"ndiscr_csvV2[nref]/F");
-    t->Branch("ndiscr_muByPt",jets_.ndiscr_muByPt,"ndiscr_muByPt[nref]/F");
+    //t->Branch("ndiscr_muByPt",jets_.ndiscr_muByPt,"ndiscr_muByPt[nref]/F");
 
-    t->Branch("pdiscr_csvV1",jets_.pdiscr_csvV1,"pdiscr_csvV1[nref]/F");
+    //t->Branch("pdiscr_csvV1",jets_.pdiscr_csvV1,"pdiscr_csvV1[nref]/F");
     t->Branch("pdiscr_csvV2",jets_.pdiscr_csvV2,"pdiscr_csvV2[nref]/F");
 
     t->Branch("nsvtx",    jets_.nsvtx,    "nsvtx[nref]/I");
@@ -354,13 +440,15 @@ HiInclusiveJetAnalyzer::beginJob() {
 
     }
 
-    t->Branch("mue",     jets_.mue,     "mue[nref]/F");
-    t->Branch("mupt",    jets_.mupt,    "mupt[nref]/F");
-    t->Branch("mueta",   jets_.mueta,   "mueta[nref]/F");
-    t->Branch("muphi",   jets_.muphi,   "muphi[nref]/F");
-    t->Branch("mudr",    jets_.mudr,    "mudr[nref]/F");
-    t->Branch("muptrel", jets_.muptrel, "muptrel[nref]/F");
-    t->Branch("muchg",   jets_.muchg,   "muchg[nref]/I");
+    if(doMuons_){
+      t->Branch("mue",     jets_.mue,     "mue[nref]/F");
+      t->Branch("mupt",    jets_.mupt,    "mupt[nref]/F");
+      t->Branch("mueta",   jets_.mueta,   "mueta[nref]/F");
+      t->Branch("muphi",   jets_.muphi,   "muphi[nref]/F");
+      t->Branch("mudr",    jets_.mudr,    "mudr[nref]/F");
+      t->Branch("muptrel", jets_.muptrel, "muptrel[nref]/F");
+      t->Branch("muchg",   jets_.muchg,   "muchg[nref]/I");
+    }
   }
 
 
@@ -377,16 +465,17 @@ HiInclusiveJetAnalyzer::beginJob() {
     t->Branch("refeta",jets_.refeta,"refeta[nref]/F");
     t->Branch("refy",jets_.refy,"refy[nref]/F");
     t->Branch("refphi",jets_.refphi,"refphi[nref]/F");
-    t->Branch("refm",jets_.refm,"refm[nref]/F");
-    t->Branch("refarea",jets_.refarea,"refarea[nref]/F");
+
+    //t->Branch("refm",jets_.refm,"refm[nref]/F");
+    //t->Branch("refarea",jets_.refarea,"refarea[nref]/F");
 
     if(doGenTaus_) {
       t->Branch("reftau1",jets_.reftau1,"reftau1[nref]/F");
       t->Branch("reftau2",jets_.reftau2,"reftau2[nref]/F");
       t->Branch("reftau3",jets_.reftau3,"reftau3[nref]/F");
     }
-    t->Branch("refdphijt",jets_.refdphijt,"refdphijt[nref]/F");
-    t->Branch("refdrjt",jets_.refdrjt,"refdrjt[nref]/F");
+    //t->Branch("refdphijt",jets_.refdphijt,"refdphijt[nref]/F");
+    //t->Branch("refdrjt",jets_.refdrjt,"refdrjt[nref]/F");
     // matched parton
     t->Branch("refparton_pt",jets_.refparton_pt,"refparton_pt[nref]/F");
     t->Branch("refparton_flavor",jets_.refparton_flavor,"refparton_flavor[nref]/I");
@@ -444,8 +533,8 @@ HiInclusiveJetAnalyzer::beginJob() {
       }
       t->Branch("genphi",jets_.genphi,"genphi[ngen]/F");
       t->Branch("genm",jets_.genm,"genm[ngen]/F");
-      t->Branch("gendphijt",jets_.gendphijt,"gendphijt[ngen]/F");
-      t->Branch("gendrjt",jets_.gendrjt,"gendrjt[ngen]/F");
+      //t->Branch("gendphijt",jets_.gendphijt,"gendphijt[ngen]/F");
+      //t->Branch("gendrjt",jets_.gendrjt,"gendrjt[ngen]/F");
 
       //for reWTA reclustering
       if(doWTARecluster_){
@@ -502,26 +591,129 @@ HiInclusiveJetAnalyzer::beginJob() {
 
   }
 
+  
+  if(doCSVTaggingVars_){
+
+    std::fill( std::begin(jets_.TagVarCSV_trackJetPt ), std::end( jets_.TagVarCSV_trackJetPt ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_vertexCategory ), std::end( jets_.TagVarCSV_vertexCategory ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_jetNSecondaryVertices ), std::end( jets_.TagVarCSV_jetNSecondaryVertices ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSumJetEtRatio ), std::end( jets_.TagVarCSV_trackSumJetEtRatio ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSumJetDeltaR ), std::end( jets_.TagVarCSV_trackSumJetDeltaR ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSip2dValAboveCharm ), std::end( jets_.TagVarCSV_trackSip2dValAboveCharm ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSip2dSigAboveCharm ), std::end( jets_.TagVarCSV_trackSip2dSigAboveCharm ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSip3dValAboveCharm ), std::end( jets_.TagVarCSV_trackSip3dValAboveCharm ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSip3dSigAboveCharm ), std::end( jets_.TagVarCSV_trackSip3dSigAboveCharm ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_vertexMass ), std::end( jets_.TagVarCSV_vertexMass ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_vertexNTracks ), std::end( jets_.TagVarCSV_vertexNTracks ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_vertexEnergyRatio ), std::end( jets_.TagVarCSV_vertexEnergyRatio ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_vertexJetDeltaR ), std::end( jets_.TagVarCSV_vertexJetDeltaR ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_flightDistance2dVal ), std::end( jets_.TagVarCSV_flightDistance2dVal ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_flightDistance2dSig ), std::end( jets_.TagVarCSV_flightDistance2dSig ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_flightDistance3dVal ), std::end( jets_.TagVarCSV_flightDistance3dVal ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_flightDistance3dSig ), std::end( jets_.TagVarCSV_flightDistance3dSig ), 0 );
+    std::fill( std::begin(jets_.Jet_nFirstTrkTagVarCSV ), std::end( jets_.Jet_nFirstTrkTagVarCSV ), 0 );
+    std::fill( std::begin(jets_.Jet_nLastTrkTagVarCSV ), std::end( jets_.Jet_nLastTrkTagVarCSV ), 0 );
+    std::fill( std::begin(jets_.Jet_nFirstTrkEtaRelTagVarCSV ), std::end( jets_.Jet_nFirstTrkEtaRelTagVarCSV ), 0 );
+    std::fill( std::begin(jets_.Jet_nLastTrkEtaRelTagVarCSV ), std::end( jets_.Jet_nLastTrkEtaRelTagVarCSV ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_jetNTracks ), std::end( jets_.TagVarCSV_jetNTracks ), 0 );
+
+    std::fill( std::begin(jets_.TagVarCSV_trackMomentum ), std::end( jets_.TagVarCSV_trackMomentum ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackEta ), std::end( jets_.TagVarCSV_trackEta ), 0 );
+    //    std::fill( std::begin(jets_.TagVarCSV_trackPhi ), std::end( jets_.TagVarCSV_trackPhi ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackPtRel ), std::end( jets_.TagVarCSV_trackPtRel ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackPPar ), std::end( jets_.TagVarCSV_trackPPar ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackDeltaR ), std::end( jets_.TagVarCSV_trackDeltaR ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackPtRatio ), std::end( jets_.TagVarCSV_trackPtRatio ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackPParRatio ), std::end( jets_.TagVarCSV_trackPParRatio ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSip2dVal ), std::end( jets_.TagVarCSV_trackSip2dVal ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSip2dSig ), std::end( jets_.TagVarCSV_trackSip2dSig ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSip3dVal ), std::end( jets_.TagVarCSV_trackSip3dVal ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackSip3dSig ), std::end( jets_.TagVarCSV_trackSip3dSig ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackDecayLenVal ), std::end( jets_.TagVarCSV_trackDecayLenVal ), 0 );
+    //std::fill( std::begin(jets_.TagVarCSV_trackDecayLenSig ), std::end( jets_.TagVarCSV_trackDecayLenSig ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackJetDistVal ), std::end( jets_.TagVarCSV_trackJetDistVal ), 0 );
+    //std::fill( std::begin(jets_.TagVarCSV_trackJetDistSig ), std::end( jets_.TagVarCSV_trackJetDistSig ), 0 );
+    std::fill( std::begin(jets_.TagVarCSV_trackEtaRel ), std::end( jets_.TagVarCSV_trackEtaRel ), 0 );
+
+    /*
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    std::fill( std::begin(jets_. ), std::end( jets_. ), 0 );
+    */
+
+    /*
+    memset(jets_.TagVarCSV_trackSumJetEtRatio, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_trackSumJetDeltaR, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_trackSip2dValAboveCharm, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_trackSip2dSigAboveCharm, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_trackSip3dValAboveCharm, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_trackSip3dSigAboveCharm, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_vertexMass, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_vertexNTracks, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_vertexEnergyRatio, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_vertexJetDeltaR, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_flightDistance2dVal, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_flightDistance2dSig, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_flightDistance3dVal, 0, MAXJETS * sizeof(float));
+    memset(jets_.TagVarCSV_flightDistance3dSig, 0, MAXJETS * sizeof(float));
+    memset(jets_.Jet_nFirstTrkTagVarCSV, 0, MAXJETS * sizeof(int));
+    memset(jets_.Jet_nLastTrkTagVarCSV, 0, MAXJETS * sizeof(int));
+    memset(jets_.Jet_nFirstTrkEtaRelTagVarCSV, 0, MAXJETS * sizeof(int));
+    memset(jets_.Jet_nLastTrkEtaRelTagVarCSV, 0, MAXJETS * sizeof(int));
+
+    memset(jets_.TagVarCSV_trackMomentum, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackEta, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackPhi, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackPtRel, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackPPar, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackDeltaR, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackPtRatio, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackPParRatio, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackSip2dVal, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackSip2dSig, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackSip3dVal, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackSip3dSig, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackDecayLenVal, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackDecayLenSig, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackJetDistVal, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackJetDistSig, 0, MAXTRK * sizeof(float));
+    memset(jets_.TagVarCSV_trackEtaRel, 0, MAXTRK * sizeof(float));
+    */
+  }
+  
+
   if (doLifeTimeTagging_) {
     /* clear arrays */
     memset(jets_.discr_csvV1, 0, MAXJETS * sizeof(float));
     memset(jets_.discr_csvV2, 0, MAXJETS * sizeof(float));
-    memset(jets_.discr_muByIp3, 0, MAXJETS * sizeof(float));
-    memset(jets_.discr_muByPt, 0, MAXJETS * sizeof(float));
+    //memset(jets_.discr_muByIp3, 0, MAXJETS * sizeof(float));
+    //memset(jets_.discr_muByPt, 0, MAXJETS * sizeof(float));
     memset(jets_.discr_prob, 0, MAXJETS * sizeof(float));
-    memset(jets_.discr_probb, 0, MAXJETS * sizeof(float));
-    memset(jets_.discr_tcHighEff, 0, MAXJETS * sizeof(float));
-    memset(jets_.discr_tcHighPur, 0, MAXJETS * sizeof(float));
-    memset(jets_.discr_ssvHighEff, 0, MAXJETS * sizeof(float));
-    memset(jets_.discr_ssvHighPur, 0, MAXJETS * sizeof(float));
+    //memset(jets_.discr_probb, 0, MAXJETS * sizeof(float));
+    //memset(jets_.discr_tcHighEff, 0, MAXJETS * sizeof(float));
+    //memset(jets_.discr_tcHighPur, 0, MAXJETS * sizeof(float));
+    //memset(jets_.discr_ssvHighEff, 0, MAXJETS * sizeof(float));
+    //memset(jets_.discr_ssvHighPur, 0, MAXJETS * sizeof(float));
 
-    memset(jets_.ndiscr_ssvHighEff, 0, MAXJETS * sizeof(float));
-    memset(jets_.ndiscr_ssvHighPur, 0, MAXJETS * sizeof(float));
-    memset(jets_.ndiscr_csvV1, 0, MAXJETS * sizeof(float));
+    //memset(jets_.ndiscr_ssvHighEff, 0, MAXJETS * sizeof(float));
+    //memset(jets_.ndiscr_ssvHighPur, 0, MAXJETS * sizeof(float));
+    //memset(jets_.ndiscr_csvV1, 0, MAXJETS * sizeof(float));
     memset(jets_.ndiscr_csvV2, 0, MAXJETS * sizeof(float));
-    memset(jets_.ndiscr_muByPt, 0, MAXJETS * sizeof(float));
+    //memset(jets_.ndiscr_muByPt, 0, MAXJETS * sizeof(float));
 
-    memset(jets_.pdiscr_csvV1, 0, MAXJETS * sizeof(float));
+    //memset(jets_.pdiscr_csvV1, 0, MAXJETS * sizeof(float));
     memset(jets_.pdiscr_csvV2, 0, MAXJETS * sizeof(float));
 
     memset(jets_.nsvtx, 0, MAXJETS * sizeof(int));
@@ -602,6 +794,13 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
     iEvent.getByToken(TowerSrc_,towers);
   }
 
+  const GenericMVAJetTagComputer *computer ;
+
+  edm::ESHandle<JetTagComputer> computerHandle;
+  iSetup.get<JetTagComputerRecord>().get( SVComputer_.c_str(), computerHandle );
+
+  computer = dynamic_cast<const GenericMVAJetTagComputer*>( computerHandle.product() );
+
   // FILL JRA TREE
   jets_.nref = 0;
 
@@ -643,24 +842,208 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
     jets_.genSDConstituentsM.clear();
   }
 
+  jets_.nTrkTagVarCSV = 0;
+  jets_.GSP_evt = -999;
+
+  //is event is from GSP process?
+  //by default - it is not GSP
+  //b quarks from the end of parton showering and before hadronization
+  
+  if(isMC_){
+    int tmp_isFromGSP = 999;
+    for(UInt_t i = 0; i < genparts->size(); ++i){
+      const reco::GenParticle& p = (*genparts)[i];
+      int ID = abs(p.pdgId());
+      tmp_isFromGSP = 999;
+      if ( ID == 5 ) {
+	//cout << "ID == 5" << endl;
+	unsigned int nDaughters = p.numberOfDaughters();
+	if( nDaughters > 0 ) {
+	  int nparton_daughters = 0;
+	  for (unsigned int d=0; d<nDaughters; ++d) {
+	    int daughterID = abs(p.daughter(d)->pdgId());
+	    if( (daughterID == 1 || daughterID == 2 || daughterID == 3 ||
+		 daughterID == 4 || daughterID == 5 || daughterID == 6 || daughterID == 21))
+	      nparton_daughters++;
+	  }
+	  if( nparton_daughters == 0 ) {
+	    if ( ID == 5 ) {
+	      tmp_isFromGSP = isFromGSP(&p);
+	      //cout <<"in the loop, ID == 5, 0 daughters and tmp_isFromGSP = " << tmp_isFromGSP << endl; 
+	      if(tmp_isFromGSP == 1) {
+		jets_.GSP_evt = tmp_isFromGSP;
+		//cout << "IF jets_.GSP_evt = " << jets_.GSP_evt << " event number = " << jets_.evt << endl;
+		break;
+	      }
+	      else{
+		jets_.GSP_evt = tmp_isFromGSP;
+		//cout << "ELSE jets_.GSP_evt = " << jets_.GSP_evt << " event number = " << jets_.evt << endl;
+	      }
+	    }
+	  }
+	}
+      }
+    }
+  }
+
+  //cout << "AFTER the LOOP jets_.GSP_evt = " << jets_.GSP_evt << " event number = " << jets_.evt << endl;
+  
+
+  //IK: debug
+  //for(unsigned int j = 0; j < 1; ++j){
   for(unsigned int j = 0; j < jets->size(); ++j){
+    //std::cout << "jet number = " << j << std::endl;
     const pat::Jet& jet = (*jets)[j];
 
     auto pt = useRawPt_ ? jet.correctedJet("Uncorrected").pt() : jet.pt();
+
+    //cout << "jet pt = " << pt << " , jet eta-phi : " << jet.eta() << " - " << jet.phi() << endl;
+
     if(pt < jetPtMin_) continue;
     if(std::abs(jet.eta()) > jetAbsEtaMax_) continue;
 
+    if(doCSVTaggingVars_){
+
+      //cout << "inside doCSVTaggingVars_" << endl;
+
+      //const GenericMVAJetTagComputer *computer;
+
+      //cout << "ipTagInfos_.c_str() = " << ipTagInfos_.c_str() << endl;
+
+      const reco::TrackIPTagInfo *ipTagInfo_CSV = jet.tagInfoTrackIP(ipTagInfos_.c_str());
+      const reco::SecondaryVertexTagInfo *svTagInfo_CSV = jet.tagInfoSecondaryVertex(svTagInfos_.c_str());
+
+      /*
+      cout << "ipTagInfo->tracks().size()  = " << ipTagInfo_CSV->tracks().size() << endl;
+      cout << "ipTagInfo->selectedTracks().size = " << ipTagInfo_CSV->selectedTracks().size() << endl; 
+      cout << " svTagInfo->nVertices() = " <<  svTagInfo_CSV->nVertices() << endl;
+      cout << "after ip and sv info" << endl;
+      */
+
+      /*
+      reco::TaggingVariableList ipVars = ipTagInfo->taggingVariables();
+      reco::TaggingVariableList svVars = svTagInfo->taggingVariables();
+       */
+
+      std::vector<const reco::BaseTagInfo*>  baseTagInfos;
+      JetTagComputer::TagInfoHelper helper(baseTagInfos);
+      baseTagInfos.push_back( ipTagInfo_CSV );
+      baseTagInfos.push_back( svTagInfo_CSV );
+      reco::TaggingVariableList vars = computer->taggingVariables(helper);
+
+      jets_.TagVarCSV_trackJetPt[jets_.nref]                  = ( vars.checkTag(reco::btau::trackJetPt) ? vars.get(reco::btau::trackJetPt) : -9999 );
+      jets_.TagVarCSV_vertexCategory[jets_.nref]              = ( vars.checkTag(reco::btau::vertexCategory) ? vars.get(reco::btau::vertexCategory) : -9999 );
+
+      //cout << " ====>>>> TagVarCSV_vertexCategory = " << jets_.TagVarCSV_vertexCategory[jets_.nref] << endl;
+
+      jets_.TagVarCSV_jetNSecondaryVertices[jets_.nref]       = ( vars.checkTag(reco::btau::jetNSecondaryVertices) ? vars.get(reco::btau::jetNSecondaryVertices) : 0 );
+      jets_.TagVarCSV_trackSumJetEtRatio[jets_.nref]          = ( vars.checkTag(reco::btau::trackSumJetEtRatio) ? vars.get(reco::btau::trackSumJetEtRatio) : -9999 );
+      jets_.TagVarCSV_trackSumJetDeltaR[jets_.nref]           = ( vars.checkTag(reco::btau::trackSumJetDeltaR) ? vars.get(reco::btau::trackSumJetDeltaR) : -9999 );
+      jets_.TagVarCSV_trackSip2dValAboveCharm[jets_.nref]     = ( vars.checkTag(reco::btau::trackSip2dValAboveCharm) ? vars.get(reco::btau::trackSip2dValAboveCharm) : -9999 );
+      jets_.TagVarCSV_trackSip2dSigAboveCharm[jets_.nref]     = ( vars.checkTag(reco::btau::trackSip2dSigAboveCharm) ? vars.get(reco::btau::trackSip2dSigAboveCharm) : -9999 );
+      jets_.TagVarCSV_trackSip3dValAboveCharm[jets_.nref]     = ( vars.checkTag(reco::btau::trackSip3dValAboveCharm) ? vars.get(reco::btau::trackSip3dValAboveCharm) : -9999 );
+      jets_.TagVarCSV_trackSip3dSigAboveCharm[jets_.nref]     = ( vars.checkTag(reco::btau::trackSip3dSigAboveCharm) ? vars.get(reco::btau::trackSip3dSigAboveCharm) : -9999 );
+      jets_.TagVarCSV_vertexMass[jets_.nref]                  = ( vars.checkTag(reco::btau::vertexMass) ? vars.get(reco::btau::vertexMass) : -9999 );
+      jets_.TagVarCSV_vertexNTracks[jets_.nref]               = ( vars.checkTag(reco::btau::vertexNTracks) ? vars.get(reco::btau::vertexNTracks) : 0 );
+      jets_.TagVarCSV_vertexEnergyRatio[jets_.nref]           = ( vars.checkTag(reco::btau::vertexEnergyRatio) ? vars.get(reco::btau::vertexEnergyRatio) : -9999 );
+      jets_.TagVarCSV_vertexJetDeltaR[jets_.nref]             = ( vars.checkTag(reco::btau::vertexJetDeltaR) ? vars.get(reco::btau::vertexJetDeltaR) : -9999 );
+      jets_.TagVarCSV_flightDistance2dVal[jets_.nref]         = ( vars.checkTag(reco::btau::flightDistance2dVal) ? vars.get(reco::btau::flightDistance2dVal) : -9999 );
+      jets_.TagVarCSV_flightDistance2dSig[jets_.nref]         = ( vars.checkTag(reco::btau::flightDistance2dSig) ? vars.get(reco::btau::flightDistance2dSig) : -9999 );
+      jets_.TagVarCSV_flightDistance3dVal[jets_.nref]         = ( vars.checkTag(reco::btau::flightDistance3dVal) ? vars.get(reco::btau::flightDistance3dVal) : -9999 );
+      jets_.TagVarCSV_flightDistance3dSig[jets_.nref]         = ( vars.checkTag(reco::btau::flightDistance3dSig) ? vars.get(reco::btau::flightDistance3dSig) : -9999 );
+
+
+      jets_.Jet_nFirstTrkTagVarCSV[jets_.nref] = jets_.nTrkTagVarCSV;
+
+      //cout << "jets_.nTrkTagVarCSV = " << jets_.nTrkTagVarCSV << endl;
+      //cout << "jets_.Jet_nFirstTrkTagVarCSV[jets_.nref] = " << jets_.Jet_nFirstTrkTagVarCSV[jets_.nref] << endl;
+
+      std::vector<float> tagValList = vars.getList(reco::btau::trackSip2dSig,false);
+
+      //cout << " ===>>> tagValList.size() = " << tagValList.size() << " from trackPtRel vector = " << vars.getList(reco::btau::trackPtRel,false).size() << " from trackPtRatio vector = " <<  vars.getList(reco::btau::trackPtRatio,false).size()<< endl;
+      jets_.TagVarCSV_jetNTracks[jets_.nref] = tagValList.size();
+
+      //      jets_.nTrkTagVarCSV += jets_.TagVarCSV_jetNTracks[jets_.nref];
+
+      tagValList = vars.getList(reco::btau::trackMomentum,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackMomentum[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackEta,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackEta[jets_.nTrkTagVarCSV] );
+      //tagValList = vars.getList(reco::btau::trackPhi,false);
+      //      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackPhi[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackPtRel,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackPtRel[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackPPar,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackPPar[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackDeltaR,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackDeltaR[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackPtRatio,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackPtRatio[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackPParRatio,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackPParRatio[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackSip2dVal,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackSip2dVal[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackSip2dSig,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackSip2dSig[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackSip3dVal,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackSip3dVal[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackSip3dSig,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackSip3dSig[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackDecayLenVal,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackDecayLenVal[jets_.nTrkTagVarCSV] );
+      //tagValList = vars.getList(reco::btau::trackDecayLenSig,false);
+      //if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackDecayLenSig[jets_.nTrkTagVarCSV] );
+      tagValList = vars.getList(reco::btau::trackJetDistVal,false);
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackJetDistVal[jets_.nTrkTagVarCSV] );
+      //tagValList = vars.getList(reco::btau::trackJetDistSig,false);
+      //      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackJetDistSig[jets_.nTrkTagVarCSV] );
+
+      jets_.nTrkTagVarCSV += jets_.TagVarCSV_jetNTracks[jets_.nref];
+      jets_.Jet_nLastTrkTagVarCSV[jets_.nref] = jets_.nTrkTagVarCSV;
+
+      /*
+      if(vars.getList(reco::btau::trackMomentum,false).size()>0){
+	cout << " ====>>> jets_.TagVarCSV_trackMomentum[0] = " << jets_.TagVarCSV_trackMomentum[0] << endl;
+	cout << " ====>>> jets_.TagVarCSV_trackMomentum[1] = " << jets_.TagVarCSV_trackMomentum[1] << endl;
+	cout << " ====>>> jets_.TagVarCSV_trackMomentum[2] = " << jets_.TagVarCSV_trackMomentum[2] << endl;
+	cout << " ====>>> jets_.TagVarCSV_trackMomentum[3] = " << jets_.TagVarCSV_trackMomentum[3] << endl;
+	cout << " ====>>> jets_.TagVarCSV_trackMomentum[4] = " << jets_.TagVarCSV_trackMomentum[4] << endl;
+	cout << " ====>>> jets_.TagVarCSV_trackMomentum[5] = " << jets_.TagVarCSV_trackMomentum[5] << endl;
+      }
+
+      cout << "jets_.Jet_nLastTrkTagVarCSV[jets_.nref] = " << jets_.Jet_nLastTrkTagVarCSV[jets_.nref] << endl;
+      */
+
+      jets_.Jet_nFirstTrkEtaRelTagVarCSV[jets_.nref] = jets_.nTrkEtaRelTagVarCSV;
+      tagValList = vars.getList(reco::btau::trackEtaRel,false);
+      jets_.TagVarCSV_jetNTracksEtaRel[jets_.nref] = tagValList.size();
+
+      if(tagValList.size()>0) std::copy( tagValList.begin(), tagValList.end(), &jets_.TagVarCSV_trackEtaRel[jets_.nTrkEtaRelTagVarCSV] );
+
+      jets_.nTrkEtaRelTagVarCSV += jets_.TagVarCSV_jetNTracksEtaRel[jets_.nref];
+      jets_.Jet_nLastTrkEtaRelTagVarCSV[jets_.nref] = jets_.nTrkEtaRelTagVarCSV;
+
+      //      std::cout << "end of run with runCSVTagTrackVariables_ " << std::endl;
+
+    }
+
     if(doLifeTimeTagging_){
+
+      //cout << "inside doLifeTimeTagging_" << endl;
+
       math::XYZVector jetDir = jet.momentum().Unit();
 
-      jets_.discr_ssvHighEff[jets_.nref]=jet.bDiscriminator(simpleSVHighEffBJetTags_);
-      jets_.discr_ssvHighPur[jets_.nref]=jet.bDiscriminator(simpleSVHighPurBJetTags_);
+      //jets_.discr_ssvHighEff[jets_.nref]=jet.bDiscriminator(simpleSVHighEffBJetTags_);
+      //jets_.discr_ssvHighPur[jets_.nref]=jet.bDiscriminator(simpleSVHighPurBJetTags_);
       jets_.discr_csvV1[jets_.nref]=jet.bDiscriminator(combinedSVV1BJetTags_);
       jets_.discr_csvV2[jets_.nref]=jet.bDiscriminator(combinedSVV2BJetTags_);
       jets_.discr_prob[jets_.nref]=jet.bDiscriminator(jetPBJetTags_);
-      jets_.discr_probb[jets_.nref]=jet.bDiscriminator(jetBPBJetTags_);
-      jets_.discr_tcHighEff[jets_.nref]=jet.bDiscriminator(trackCHEBJetTags_);
-      jets_.discr_tcHighPur[jets_.nref]=jet.bDiscriminator(trackCHPBJetTags_);
+      //jets_.discr_probb[jets_.nref]=jet.bDiscriminator(jetBPBJetTags_);
+      //jets_.discr_tcHighEff[jets_.nref]=jet.bDiscriminator(trackCHEBJetTags_);
+      //jets_.discr_tcHighPur[jets_.nref]=jet.bDiscriminator(trackCHPBJetTags_);
+      //std::cout << "this is a jet with pt = " << pt << std::endl;
+      jets_.ndiscr_csvV2[jets_.nref]=jet.bDiscriminator(ncombinedSVV2BJetTags_);
+      jets_.pdiscr_csvV2[jets_.nref]=jet.bDiscriminator(pcombinedSVV2BJetTags_);
 
       if(jet.hasTagInfo(svTagInfos_.c_str()) ){
 
@@ -777,25 +1160,29 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
       const PFCandidateCollection *pfCandidateColl = &(*pfCandidates);
       int pfMuonIndex = getPFJetMuon(jet, pfCandidateColl);
 
-      if(pfMuonIndex >=0){
-	const reco::PFCandidate muon = pfCandidateColl->at(pfMuonIndex);
-	jets_.mupt[jets_.nref]    =  muon.pt();
-	jets_.mueta[jets_.nref]   =  muon.eta();
-	jets_.muphi[jets_.nref]   =  muon.phi();
-	jets_.mue[jets_.nref]     =  muon.energy();
-	jets_.mudr[jets_.nref]    =  reco::deltaR(jet,muon);
-	jets_.muptrel[jets_.nref] =  getPtRel(muon, jet);
-	jets_.muchg[jets_.nref]   =  muon.charge();
-      }else{
-	jets_.mupt[jets_.nref]    =  0.0;
-	jets_.mueta[jets_.nref]   =  0.0;
-	jets_.muphi[jets_.nref]   =  0.0;
-	jets_.mue[jets_.nref]     =  0.0;
-	jets_.mudr[jets_.nref]    =  9.9;
-	jets_.muptrel[jets_.nref] =  0.0;
-	jets_.muchg[jets_.nref]   = 0;
+      if(doMuons_){
+	if(pfMuonIndex >=0){
+	  const reco::PFCandidate muon = pfCandidateColl->at(pfMuonIndex);
+	  jets_.mupt[jets_.nref]    =  muon.pt();
+	  jets_.mueta[jets_.nref]   =  muon.eta();
+	  jets_.muphi[jets_.nref]   =  muon.phi();
+	  jets_.mue[jets_.nref]     =  muon.energy();
+	  jets_.mudr[jets_.nref]    =  reco::deltaR(jet,muon);
+	  jets_.muptrel[jets_.nref] =  getPtRel(muon, jet);
+	  jets_.muchg[jets_.nref]   =  muon.charge();
+	}else{
+	  jets_.mupt[jets_.nref]    =  0.0;
+	  jets_.mueta[jets_.nref]   =  0.0;
+	  jets_.muphi[jets_.nref]   =  0.0;
+	  jets_.mue[jets_.nref]     =  0.0;
+	  jets_.mudr[jets_.nref]    =  9.9;
+	  jets_.muptrel[jets_.nref] =  0.0;
+	  jets_.muchg[jets_.nref]   = 0;
+	}	
       }
     }
+
+    //cout << "after tagging" << endl;
 
     if(doHiJetID_){
       // Jet ID variables
@@ -983,21 +1370,25 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
     }
     //------------------------------------------------------------------
 
-    jets_.jttau1[jets_.nref] = -999.;
-    jets_.jttau2[jets_.nref] = -999.;
-    jets_.jttau3[jets_.nref] = -999.;
+    if(doRecoTau_){
+      jets_.jttau1[jets_.nref] = -999.;
+      jets_.jttau2[jets_.nref] = -999.;
+      jets_.jttau3[jets_.nref] = -999.;
+    }
 
     jets_.jtsym[jets_.nref] = -999.;
     jets_.jtdroppedBranches[jets_.nref] = -999;
     
     if(doSubJets_) analyzeSubjets(jet);
 
-    if( jet.hasUserFloat(jetName_+"Njettiness:tau1") )
-      jets_.jttau1[jets_.nref] = jet.userFloat(jetName_+"Njettiness:tau1");
-    if( jet.hasUserFloat(jetName_+"Njettiness:tau2") )
-      jets_.jttau2[jets_.nref] = jet.userFloat(jetName_+"Njettiness:tau2");
-    if( jet.hasUserFloat(jetName_+"Njettiness:tau3") )
-      jets_.jttau3[jets_.nref] = jet.userFloat(jetName_+"Njettiness:tau3");
+    if(doRecoTau_){
+      if( jet.hasUserFloat(jetName_+"Njettiness:tau1") )
+	jets_.jttau1[jets_.nref] = jet.userFloat(jetName_+"Njettiness:tau1");
+      if( jet.hasUserFloat(jetName_+"Njettiness:tau2") )
+	jets_.jttau2[jets_.nref] = jet.userFloat(jetName_+"Njettiness:tau2");
+      if( jet.hasUserFloat(jetName_+"Njettiness:tau3") )
+	jets_.jttau3[jets_.nref] = jet.userFloat(jetName_+"Njettiness:tau3");
+    }
 
     if( jet.hasUserFloat(jetName_+"Jets:sym") )
       jets_.jtsym[jets_.nref] = jet.userFloat(jetName_+"Jets:sym");
@@ -1031,7 +1422,6 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
     }
 
     if(isMC_){
-
       for(UInt_t i = 0; i < genparts->size(); ++i){
 	const reco::GenParticle& p = (*genparts)[i];
 	if ( p.status()!=1 || p.charge()==0) continue;
@@ -1055,11 +1445,12 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
 	jets_.refpt[jets_.nref] = genjet->pt();
 	jets_.refeta[jets_.nref] = genjet->eta();
 	jets_.refphi[jets_.nref] = genjet->phi();
-        jets_.refm[jets_.nref] = genjet->mass();
-        jets_.refarea[jets_.nref] = genjet->jetArea();
+
+        //jets_.refm[jets_.nref] = genjet->mass();
+        //jets_.refarea[jets_.nref] = genjet->jetArea();
         jets_.refy[jets_.nref] = genjet->eta();
-	jets_.refdphijt[jets_.nref] = reco::deltaPhi(jet.phi(), genjet->phi());
-	jets_.refdrjt[jets_.nref] = reco::deltaR(jet.eta(),jet.phi(),genjet->eta(),genjet->phi());
+	//jets_.refdphijt[jets_.nref] = reco::deltaPhi(jet.phi(), genjet->phi());
+	//jets_.refdrjt[jets_.nref] = reco::deltaR(jet.eta(),jet.phi(),genjet->eta(),genjet->phi());
 
 	if(doSubEvent_){
 	  const GenParticle* gencon = genjet->getGenConstituent(0);
@@ -1073,11 +1464,11 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
 	jets_.refpt[jets_.nref] = -999.;
 	jets_.refeta[jets_.nref] = -999.;
 	jets_.refphi[jets_.nref] = -999.;
-        jets_.refm[jets_.nref] = -999.;
-        jets_.refarea[jets_.nref] = -999.;
+        //jets_.refm[jets_.nref] = -999.;
+        //jets_.refarea[jets_.nref] = -999.;
 	jets_.refy[jets_.nref] = -999.;
-	jets_.refdphijt[jets_.nref] = -999.;
-	jets_.refdrjt[jets_.nref] = -999.;
+	//jets_.refdphijt[jets_.nref] = -999.;
+	//jets_.refdrjt[jets_.nref] = -999.;
 
 	if (doJetConstituents_) {
 	  jets_.refConstituentsId.emplace_back(1, -999);
@@ -1201,7 +1592,7 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
       }
 
       // find matching patJet if there is one
-      jets_.gendrjt[jets_.ngen] = -1.0;
+      //jets_.gendrjt[jets_.ngen] = -1.0;
       jets_.genmatchindex[jets_.ngen] = -1;
       
       for(int ijet = 0 ; ijet < jets_.nref; ++ijet){
@@ -1214,8 +1605,8 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
         if(deltaPt < 0.01 && deltaEta < .0001 && deltaPhi < .0001){
           if(genjet_pt>genPtMin_) {
             jets_.genmatchindex[jets_.ngen] = (int)ijet;
-            jets_.gendphijt[jets_.ngen] = reco::deltaPhi(jets_.refphi[ijet],genjet.phi());
-            jets_.gendrjt[jets_.ngen] = sqrt(pow(jets_.gendphijt[jets_.ngen],2)+pow(fabs(genjet.eta()-jets_.refeta[ijet]),2));
+	    //            jets_.gendphijt[jets_.ngen] = reco::deltaPhi(jets_.refphi[ijet],genjet.phi());
+	    //            jets_.gendrjt[jets_.ngen] = sqrt(pow(jets_.gendphijt[jets_.ngen],2)+pow(fabs(genjet.eta()-jets_.refeta[ijet]),2));
           }
           if(doGenTaus_) {
             jets_.reftau1[ijet] = tau1;
@@ -1268,6 +1659,7 @@ HiInclusiveJetAnalyzer::analyze(const Event& iEvent,
     }
   }
 
+  //cout << "BEFORE the TREE FILL: jets_.GSP_evt = " << jets_.GSP_evt << " event number = " << jets_.evt << endl;
 
   t->Fill();
 
@@ -1278,6 +1670,51 @@ int
 HiInclusiveJetAnalyzer::getPFJetMuon(const pat::Jet& pfJet, const reco::PFCandidateCollection *pfCandidateColl)
 {
 
+  int pfMuonIndex = -1;
+  float ptMax = 0.;
+  
+  
+  for(unsigned icand=0;icand<pfCandidateColl->size(); icand++) {
+    const reco::PFCandidate& pfCandidate = pfCandidateColl->at(icand);
+    
+    
+    double pt = pfCandidate.pt();
+    if(pt<5.) continue;
+
+    if(reco::deltaR(pfJet,pfCandidate)>0.4) continue;
+    
+    if(pfCandidate.muonRef().isNonnull() && pfCandidate.trackRef().isNonnull()){
+      
+      if(!pfCandidate.muonRef()->isGlobalMuon()) continue;
+      if(!pfCandidate.muonRef()->isTrackerMuon()) continue;
+      
+      if(pfCandidate.muonRef()->numberOfMatchedStations()<2) continue;
+      
+      reco::TrackRef innerTrack = pfCandidate.muonRef()->innerTrack();
+      if(!innerTrack.isNonnull()) continue;
+      if(innerTrack->hitPattern().numberOfValidHits() < 10) continue;
+      if(innerTrack->hitPattern().numberOfValidPixelHits() < 2) continue;
+      if(innerTrack->normalizedChi2() < 10);
+      
+      reco::TrackRef globalTrack = pfCandidate.muonRef()->globalTrack();
+      if(!globalTrack.isNonnull()) continue;
+      if(globalTrack->hitPattern().numberOfValidMuonHits() < 1) continue;
+      if(globalTrack->normalizedChi2() < 10);
+      
+      reco::TrackRef outerTrack = pfCandidate.muonRef()->outerTrack();
+      if(!outerTrack.isNonnull()) continue;
+      if(outerTrack->hitPattern().numberOfLostMuonHits()>1 ) continue;
+      
+      if(pt>ptMax){
+	ptMax = pt;
+	pfMuonIndex = (int) icand;
+      }
+    }
+  }
+  
+  return pfMuonIndex;
+  
+/*
   int pfMuonIndex = -1;
   float ptMax = 0.;
 
@@ -1298,6 +1735,7 @@ HiInclusiveJetAnalyzer::getPFJetMuon(const pat::Jet& pfJet, const reco::PFCandid
   }
 
   return pfMuonIndex;
+*/
 
 }
 
@@ -1615,6 +2053,42 @@ float HiInclusiveJetAnalyzer::getAboveCharmThresh(TrackRefVector& selTracks, con
 	}
 	return 0;
 
+}
+
+//IK: to add method isFromGSP as in BTagAnalyzer : https://github.com/cms-btv-pog/RecoBTag-PerformanceMeasurements/blob/10_2_X/plugins/BTagAnalyzer.cc
+int HiInclusiveJetAnalyzer::isFromGSP(const reco::Candidate* c){
+  int isFromGSP = 0;
+
+  if( c->numberOfMothers() == 1 ) {
+
+    //cout << "c->numberOfMothers() == 1" << endl;
+
+    const reco::Candidate* dau = c;
+    const reco::Candidate* mom = c->mother();
+    while( dau->numberOfMothers() == 1 && !( isHardProcess(mom->status()) && (abs(mom->pdgId())==4 || abs(mom->pdgId())==5) ) ) {
+      if( abs(mom->pdgId())==21 )
+        {
+          isFromGSP = 1;
+          break;
+        }
+      dau = mom;
+      mom = dau->mother();
+    }
+  }
+  //cout << "isFromGSP = " << isFromGSP << endl;
+  return isFromGSP;
+}
+
+bool HiInclusiveJetAnalyzer::isHardProcess(const int status){
+
+  bool isHardProcess = false;
+
+  //for pythia 8 (official MC of pp 2017 and PbPb 2018)
+  if( status>=21 && status<=29 ) isHardProcess = true;
+
+  //for Pythia 6 use instead :
+  // if( status==3 ) return true;
+  return isHardProcess;
 }
 
 

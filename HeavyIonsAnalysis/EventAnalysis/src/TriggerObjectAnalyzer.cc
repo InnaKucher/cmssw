@@ -70,6 +70,7 @@ private:
   edm::Service<TFileService> fs;
   vector<TTree*> nt_;
   int verbose_;
+  int verbose2_;
 
   std::map<std::string, bool> triggerInMenu;
 
@@ -113,6 +114,7 @@ TriggerObjectAnalyzer::TriggerObjectAnalyzer(const edm::ParameterSet& ps):
 
 
   verbose_ = 0;
+  verbose2_ = 0;
 }
 
 
@@ -142,31 +144,43 @@ TriggerObjectAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& 
     iEvent.getByLabel(triggerResultsTag_,triggerResultsHandle_);
 
     for(unsigned int itrig=0; itrig<triggerNames_.size(); itrig++){
+
 	std::map<std::string,bool>::iterator inMenu = triggerInMenu.find(triggerNames_[itrig]);
         if (inMenu==triggerInMenu.end()){ continue; }
       
 	triggerIndex_ = hltConfig_.triggerIndex(triggerNames_[itrig]);
       const unsigned int mIndex = triggerResultsHandle_->index(triggerIndex_);
 
+      for (unsigned int j=0; j<=mIndex; ++j) {
+
+      if(verbose2_) cout << " j = " << j << " , mIndex = " << mIndex << endl;
+
+      //IK
+      /*
       bool accepted = triggerResultsHandle_->accept(triggerIndex_);
       if (!accepted) {
 	// do not fill trigger object if the event is not accepted.
         continue;
       }
+      */
+
+      if(verbose2_) cout << triggerNames_.at(itrig).c_str() << endl;
 
       // start from last modulein the path, iterate back until finding the filter that was run last
+      /*
       bool foundLastFilter = false;
       for (int j = mIndex; j >= 0; --j) {
         if (foundLastFilter) {
           break;
         }
+      */
 
 	string trigFilterIndex = hltConfig_.moduleLabels(triggerIndex_).at(j); //this is simple to put into a loop to get all triggers...
 
         const unsigned int filterIndex(triggerEventHandle_->filterIndex(InputTag(trigFilterIndex,"",processName_)));
 	if (filterIndex<triggerEventHandle_->sizeFilters()) {
 
-          foundLastFilter = true;
+          //foundLastFilter = true;
 	  const trigger::Vids& VIDS (triggerEventHandle_->filterIds(filterIndex));
 	  const trigger::Keys& KEYS(triggerEventHandle_->filterKeys(filterIndex));
 	  const unsigned int nI(VIDS.size());
@@ -179,8 +193,9 @@ TriggerObjectAnalyzer::analyze(const edm::Event& iEvent, const edm::EventSetup& 
 	    const trigger::TriggerObject& TO(TOC[KEYS[i]]);
 	    //This check prevents grabbing the L1 trigger object (VIDS < 0), and finds the max trigger pt within all trigger collections
 	    if(VIDS[i]>0){ // && pt<TO.pt()){
-	      if(verbose_){
-		cout << "verbose   " << i << " VID= " << VIDS[i] << "/ KEY= " << KEYS[i] << ": ID= "
+	      if(verbose2_){
+		cout << "IK:   " << i << " " << VIDS[i] << "/" << KEYS[i] << ": " << endl;
+		cout << "IK: verbose   " << i << " VID= " << VIDS[i] << "/ KEY= " << KEYS[i] << ": ID= "
 	                    << TO.id() << " " << TO.pt() << " " << TO.et() << " " << TO.eta() << " " << TO.phi() << " " << TO.mass()
 	                              << endl;
 	      }

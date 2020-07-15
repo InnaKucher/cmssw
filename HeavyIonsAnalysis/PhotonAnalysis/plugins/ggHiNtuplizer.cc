@@ -1961,7 +1961,7 @@ void ggHiNtuplizer::fillMuons(const edm::Event& e, const edm::EventSetup& es, re
 
   for (const auto& mu : *recoMuonsHandle) {
     
-    if (mu.pt() < 3.0) continue;
+    //    if (mu.pt() < 3.0) continue;
     if (!(mu.isPFMuon() || mu.isGlobalMuon() || mu.isTrackerMuon())) continue;
 
     muPt_    .push_back(mu.pt());

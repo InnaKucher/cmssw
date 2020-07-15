@@ -92,10 +92,10 @@ CSVscikitTagger::~CSVscikitTagger()
 
 /// b-tag a jet based on track-to-jet parameters in the extened info collection
 float CSVscikitTagger::discriminator(const TagInfoHelper & tagInfo) const {
-  // default value, used if there are no leptons associated to this jet
+
   const reco::TrackIPTagInfo & ip_info = tagInfo.get<reco::TrackIPTagInfo>(0);
-	const reco::SecondaryVertexTagInfo & sv_info = tagInfo.get<reco::SecondaryVertexTagInfo>(1);
-	reco::TaggingVariableList vars = sv_computer_(ip_info, sv_info);
+  const reco::SecondaryVertexTagInfo & sv_info = tagInfo.get<reco::SecondaryVertexTagInfo>(1);
+  reco::TaggingVariableList vars = sv_computer_(ip_info, sv_info);
 
 	// Loop over input variables
 	std::map<std::string, float> inputs;
@@ -122,15 +122,18 @@ float CSVscikitTagger::discriminator(const TagInfoHelper & tagInfo) const {
 			  if (printdebug) std::cout << inputs[mva_var.name] << "\t";
 			}
 
-			if (mva_var.name == "Jet_pt") {
+			//if (mva_var.name == "Jet_pt") {
+			if (mva_var.name == "jtpt") {
 			  save_pt_value = inputs[mva_var.name];
 			}
 
-			if (mva_var.name == "Jet_eta") {
+			if (mva_var.name == "jteta") {
 			  save_eta_value = inputs[mva_var.name];
 			  passes_cuts = (save_pt_value > 30 && save_eta_value > -2.4 && save_eta_value < 2.4);
 			  if (printdebug) {if (passes_cuts) std::cout << save_pt_value << "\t" << save_eta_value << "\t";}
 			}
+
+			//std::cout << "vectorial tagging variable : mva_var.name = " << mva_var.name << " , inputs[mva_var.name] = " << inputs[mva_var.name] << std::endl;
 			
 		}
 		//single value tagging var
@@ -146,6 +149,9 @@ float CSVscikitTagger::discriminator(const TagInfoHelper & tagInfo) const {
 			if (passes_cuts) {
 			  if (printdebug) std::cout << inputs[mva_var.name] << "\t";
 			}
+
+			//std::cout <<"single value variables : mva_var.name = " << mva_var.name << " , inputs[mva_var.name] = " << inputs[mva_var.name] << std::endl;
+
 		}
 		
 	}
@@ -163,12 +169,12 @@ float CSVscikitTagger::discriminator(const TagInfoHelper & tagInfo) const {
 	
 	if (notTaggable) {
 	  tag = -1;
-	  if (PbPbdebug) std::cout<<" --- jet not taggable"<<std::endl;
+	  //if (PbPbdebug) std::cout<<" --- jet not taggable"<<std::endl;
 	  
 	}
 	
 
-	if (PbPbdebug) {
+	if (PbPbdebug && !notTaggable) {
 	  std::cout<<"Looking at a jet of "<<save_pt_value<<" GeV"<<std::endl;
 	  for (auto x:inputs)
 	    std::cout<<"Variable = "<<x.first<<" value = "<<x.second<<std::endl;

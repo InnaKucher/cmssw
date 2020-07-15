@@ -26,7 +26,8 @@ process.HiForest.HiForestVersion = cms.string(version)
 process.source = cms.Source("PoolSource",
     duplicateCheckMode = cms.untracked.string("noDuplicateCheck"),
     fileNames = cms.untracked.vstring(
-        "file:/afs/cern.ch/work/r/rbi/public/forest/HINPbPbAutumn18DR_Pythia8_Ze10e10_TuneCP5_5p02TeV_AODSIM.root"
+        #"file:/afs/cern.ch/work/r/rbi/public/forest/HINPbPbAutumn18DR_Pythia8_Ze10e10_TuneCP5_5p02TeV_AODSIM.root"
+        "file:/eos/cms/store/group/phys_heavyions/ikucher/BJet15_AOD/F8F1CA6A-8B0E-4F4C-9588-65DF1CB4741D.root"
         ),
     )
 
@@ -69,7 +70,7 @@ process.centralityBin.centralityVariable = cms.string("HFtowers")
 ###############################################################################
 
 process.TFileService = cms.Service("TFileService",
-    fileName = cms.string("HiForestAOD.root"))
+    fileName = cms.string("HiForestAOD_CSVVarsTest.root"))
 
 ###############################################################################
 # Additional Reconstruction and Analysis: Main Body
@@ -175,6 +176,12 @@ process.load('HeavyIonsAnalysis.JetAnalysis.rechitanalyzer_cfi')
 #https://twiki.cern.ch/twiki/bin/view/CMS/HITracking2018PbPb#Peripheral%20Vertex%20Recovery
 process.load("RecoVertex.PrimaryVertexProducer.OfflinePrimaryVerticesRecovery_cfi")
 
+process.load("PhysicsTools.PatAlgos.producersLayer1.patCandidates_cff")
+process.load("PhysicsTools.PatAlgos.selectionLayer1.selectedPatCandidates_cff")
+
+from PhysicsTools.PatAlgos.tools.jetTools import *
+
+
 #########################
 # Main analysis list
 #########################
@@ -191,16 +198,16 @@ process.ana_step = cms.Path(
     process.HiGenParticleAna +
     process.genSignalSequence +
     process.jetSequence +
-    process.hiPuRhoR3Analyzer + 
-    process.correctedElectrons +
-    process.ggHiNtuplizer +
-    process.ggHiNtuplizerGED +
-    process.hiFJRhoAnalyzer +
-    process.hiFJRhoAnalyzerFinerBins +
-    process.pfcandAnalyzer +
-    process.pfcandAnalyzerCS +
-    process.trackSequencesPP +
-    process.rechitanalyzerpp
+    process.hiPuRhoR3Analyzer
+    #process.correctedElectrons +
+    #process.ggHiNtuplizer +
+    #process.ggHiNtuplizerGED +
+    #process.hiFJRhoAnalyzer +
+    #process.hiFJRhoAnalyzerFinerBins +
+    #process.pfcandAnalyzer +
+    #process.pfcandAnalyzerCS +
+    #process.trackSequencesPP +
+    #process.rechitanalyzerpp
     )
 
 # # edm output for debugging purposes

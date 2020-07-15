@@ -99,6 +99,8 @@ void HLTInfo::analyze(const edm::Handle<edm::TriggerResults>                 & h
       int itdum = 0;
       for (auto & dummyBranche : dummyBranches_) {
 	TString trigName(dummyBranche.data());
+	if(!trigName.Contains("jet", TString::kIgnoreCase)) continue;
+
 	HltTree->Branch(trigName,trigflag+itdum,trigName+"/I");
 	HltTree->Branch(trigName+"_Prescl",trigPrescl+itdum,trigName+"_Prescl/I");
 	pathtoindex[dummyBranche] = itdum;
@@ -109,6 +111,7 @@ void HLTInfo::analyze(const edm::Handle<edm::TriggerResults>                 & h
         const std::string& trigName = triggerNames.triggerName(itrig);
 	if (pathtoindex.find(trigName) == pathtoindex.end()) {
 	  TString TSname = trigName;
+	  if(!TSname.Contains("jet", TString::kIgnoreCase)) continue;
 	  HltTree->Branch(TSname,trigflag+itdum+itrig,TSname+"/I");
 	  HltTree->Branch(TSname+"_Prescl",trigPrescl+itdum+itrig,TSname+"_Prescl/I");
 	  pathtoindex[trigName] = itdum + itrig;
@@ -161,6 +164,8 @@ void HLTInfo::analyze(const edm::Handle<edm::TriggerResults>                 & h
       int itdum = 0;
       for (auto & dummy : l1dummies) {
 	TString trigName(dummy.data());
+	if(!trigName.Contains("jet", TString::kIgnoreCase) && !trigName.Contains("inimum", TString::kIgnoreCase))continue;
+
 	HltTree->Branch(trigName,l1flag+itdum,trigName+"/I");
 	HltTree->Branch(trigName+"_Prescl",l1Prescl+itdum,trigName+"_Prescl/I");
 	pathtoindex[dummy] = itdum;
@@ -174,6 +179,8 @@ void HLTInfo::analyze(const edm::Handle<edm::TriggerResults>                 & h
 	  
 	if (pathtoindex.find(l1trigName) == pathtoindex.end()) {
 	  TString l1TSname = l1trigName;
+	  if(!l1TSname.Contains("jet", TString::kIgnoreCase) && !l1TSname.Contains("inimum", TString::kIgnoreCase)) continue;
+
 	  HltTree->Branch(l1TSname,l1flag+itdum+il1,l1TSname+"/I");
 	  HltTree->Branch(l1TSname+"_Prescl",l1Prescl+itdum+il1,l1TSname+"_Prescl/I");
 	  pathtoindex[l1trigName] = itdum + il1;

@@ -1,15 +1,15 @@
 import FWCore.ParameterSet.Config as cms
-import RecoBTag.SecondaryVertex.candidateCombinedSecondaryVertexV2Computer_cfi as sl_cfg 
+import RecoBTag.SecondaryVertex.negativeCombinedSecondaryVertexV2Computer_cfi as sl_cfg
 from RecoBTag.CSVscikit.training_settings import csvscikit_vpset
 from RecoBTag.CSVscikit.helpers import get_vars
 
 weightfilename = 'RecoBTag/PerformanceMeasurements/test/TMVA_weights.xml'
 
 #charmTagsComputerCvsL = cms.ESProducer(
-CSVscikitTags = cms.ESProducer(
+CSVscikitNegTags = cms.ESProducer(
    'CSVscikitESProducer',
    slComputerCfg = cms.PSet(
-      **sl_cfg.candidateCombinedSecondaryVertexV2Computer.parameters_()
+      **sl_cfg.negativeCombinedSecondaryVertexV2Computer.parameters_()
       ),
    weightFile = cms.FileInPath(weightfilename),
    variables = csvscikit_vpset,

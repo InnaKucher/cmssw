@@ -3,6 +3,9 @@
 # Type: Data
 # Input: AOD
 
+# keep disabled by default until fully commissioned
+cleanJets = True
+
 import FWCore.ParameterSet.Config as cms
 process = cms.Process('HiForest')
 
@@ -26,7 +29,8 @@ process.HiForest.HiForestVersion = cms.string(version)
 process.source = cms.Source("PoolSource",
     duplicateCheckMode = cms.untracked.string("noDuplicateCheck"),
     fileNames = cms.untracked.vstring(
-        "file:/afs/cern.ch/work/r/rbi/public/forest/HIHardProbes_HIRun2018A-PromptReco-v2_AOD.root"
+        #"file:/afs/cern.ch/work/r/rbi/public/forest/HIHardProbes_HIRun2018A-PromptReco-v2_AOD.root"
+        "/store/hidata/HIRun2018A/HISingleMuon/AOD/04Apr2019-v1/120000/EBF0B745-D9A3-4A49-9A73-111CD9DF376B.root"
         ),
     )
 
@@ -63,12 +67,20 @@ process.load("RecoHI.HiCentralityAlgos.CentralityBin_cfi")
 process.centralityBin.Centrality = cms.InputTag("hiCentrality")
 process.centralityBin.centralityVariable = cms.string("HFtowers")
 
+process.GlobalTag.toGet.extend([
+    cms.PSet(record = cms.string("BTagTrackProbability3DRcd"),
+             tag = cms.string("JPcalib_Data103X_2018PbPb_v1"),
+             connect = cms.string("frontier://FrontierProd/CMS_CONDITIONS")
+
+         )
+      ])
+
 ###############################################################################
 # Define tree output
 ###############################################################################
 
 process.TFileService = cms.Service("TFileService",
-    fileName = cms.string("HiForestAOD.root"))
+    fileName = cms.string("HiForestAOD_MuonPD_DATA_CleanJets_MuEnriched_newFilter_debug.root"))
 
 ###############################################################################
 # Additional Reconstruction and Analysis: Main Body
@@ -98,7 +110,7 @@ process.load('HeavyIonsAnalysis.EventAnalysis.skimanalysis_cfi')
 process.load('HeavyIonsAnalysis.EventAnalysis.hltobject_jets_cfi')
 process.load('HeavyIonsAnalysis.EventAnalysis.l1object_cfi')
 
-from HeavyIonsAnalysis.EventAnalysis.hltobject_jets_cfi import trigger_list_data
+from HeavyIonsAnalysis.EventAnalysis.hltobject_mu_jets_cfi import trigger_list_data
 process.hltobject.triggerNames = trigger_list_data
 
 ###############################################################################
@@ -132,6 +144,7 @@ process.ggHiNtuplizerGED.gsfElectronLabel = "correctedElectrons"
 # B-tagging
 ######################
 # replace pp CSVv2 with PbPb CSVv2 (positive and negative taggers unchanged!)
+
 process.load('RecoBTag.CSVscikit.csvscikitTagJetTags_cfi')
 process.load('RecoBTag.CSVscikit.csvscikitTaggerProducer_cfi')
 
@@ -139,30 +152,34 @@ process.akFlowPuCs4PFCombinedSecondaryVertexV2BJetTags = process.pfCSVscikitJetT
 process.akFlowPuCs4PFCombinedSecondaryVertexV2BJetTags.tagInfos = cms.VInputTag(
     cms.InputTag("akFlowPuCs4PFImpactParameterTagInfos"),
     cms.InputTag("akFlowPuCs4PFSecondaryVertexTagInfos"))
-process.akFlowPuCs3PFCombinedSecondaryVertexV2BJetTags = process.pfCSVscikitJetTags.clone()
-process.akFlowPuCs3PFCombinedSecondaryVertexV2BJetTags.tagInfos = cms.VInputTag(
-    cms.InputTag("akFlowPuCs3PFImpactParameterTagInfos"),
-    cms.InputTag("akFlowPuCs3PFSecondaryVertexTagInfos"))
-process.akFlowPuCs4PFNegativeCombinedSecondaryVertexV2BJetTags = process.pfCSVscikitJetTags.clone()
+
+process.CSVscikitTags.weightFile = cms.FileInPath(
+    'HeavyIonsAnalysis/JetAnalysis/data/TMVA_Btag_CsJets_PbPb2018_BDTG.weights.xml')
+
+#negative
+
+process.load('RecoBTag.CSVscikit.csvscikitNegTagJetTags_cfi')
+process.load('RecoBTag.CSVscikit.csvscikitTaggerProducerNegative_cfi')
+
+process.akFlowPuCs4PFNegativeCombinedSecondaryVertexV2BJetTags = process.pfCSVscikitJetNegTags.clone()
 process.akFlowPuCs4PFNegativeCombinedSecondaryVertexV2BJetTags.tagInfos = cms.VInputTag(
     cms.InputTag("akFlowPuCs4PFImpactParameterTagInfos"),
     cms.InputTag("akFlowPuCs4PFSecondaryVertexNegativeTagInfos"))
-process.akFlowPuCs3PFNegativeCombinedSecondaryVertexV2BJetTags = process.pfCSVscikitJetTags.clone()
-process.akFlowPuCs3PFNegativeCombinedSecondaryVertexV2BJetTags.tagInfos = cms.VInputTag(
-    cms.InputTag("akFlowPuCs3PFImpactParameterTagInfos"),
-    cms.InputTag("akFlowPuCs3PFSecondaryVertexNegativeTagInfos"))
-process.akFlowPuCs4PFPositiveCombinedSecondaryVertexV2BJetTags = process.pfCSVscikitJetTags.clone()
+
+process.CSVscikitNegTags.weightFile = cms.FileInPath(
+    'HeavyIonsAnalysis/JetAnalysis/data/TMVA_Btag_CsJets_PbPb2018_BDTG.weights.xml')
+
+#positive
+
+process.load('RecoBTag.CSVscikit.csvscikitPosTagJetTags_cfi')
+process.load('RecoBTag.CSVscikit.csvscikitTaggerProducerPositive_cfi')
+
+process.akFlowPuCs4PFPositiveCombinedSecondaryVertexV2BJetTags = process.pfCSVscikitJetPosTags.clone()
 process.akFlowPuCs4PFPositiveCombinedSecondaryVertexV2BJetTags.tagInfos = cms.VInputTag(
     cms.InputTag("akFlowPuCs4PFImpactParameterTagInfos"),
     cms.InputTag("akFlowPuCs4PFSecondaryVertexTagInfos"))
-process.akFlowPuCs3PFPositiveCombinedSecondaryVertexV2BJetTags = process.pfCSVscikitJetTags.clone()
-process.akFlowPuCs3PFPositiveCombinedSecondaryVertexV2BJetTags.tagInfos = cms.VInputTag(
-    cms.InputTag("akFlowPuCs3PFImpactParameterTagInfos"),
-    cms.InputTag("akFlowPuCs3PFSecondaryVertexTagInfos"))
 
-
-# trained on CS jets
-process.CSVscikitTags.weightFile = cms.FileInPath(
+process.CSVscikitPosTags.weightFile = cms.FileInPath(
     'HeavyIonsAnalysis/JetAnalysis/data/TMVA_Btag_CsJets_PbPb2018_BDTG.weights.xml')
 
 ###############################################################################
@@ -184,6 +201,11 @@ process.pfTowerspp.doHF = False
 #https://twiki.cern.ch/twiki/bin/view/CMS/HITracking2018PbPb#Peripheral%20Vertex%20Recovery
 process.load("RecoVertex.PrimaryVertexProducer.OfflinePrimaryVerticesRecovery_cfi")
 
+# clean bad PF candidates
+if cleanJets:
+    process.load("RecoHI.HiJetAlgos.HiBadParticleFilter_cfi")
+    process.pfBadCandAnalyzer = process.pfcandAnalyzer.clone(pfCandidateLabel = cms.InputTag("filteredParticleFlow","cleaned"))
+    process.pfFilter = cms.Path(process.filteredParticleFlow + process.pfBadCandAnalyzer)
 
 #########################
 # Main analysis list
@@ -275,13 +297,28 @@ from HLTrigger.Configuration.CustomConfigs import MassReplaceInputTag
 process = MassReplaceInputTag(process,"offlinePrimaryVertices","offlinePrimaryVerticesRecovery")
 process.offlinePrimaryVerticesRecovery.oldVertexLabel = "offlinePrimaryVertices"
 
+if cleanJets == True:
+    from HLTrigger.Configuration.CustomConfigs import MassReplaceInputTag
+    process = MassReplaceInputTag(process,"particleFlow","filteredParticleFlow")                                                                                                               
+    process.filteredParticleFlow.PFCandidates  = "particleFlow"
+
 ###############################################################################
+
+process.akFlowPuCs4PFJets.src = cms.InputTag("ak4PFJetsWithMuon","constituents")
 
 # Customization
 
 from HLTrigger.HLTfilters.hltHighLevel_cfi import hltHighLevel
 process.hltfilter = hltHighLevel.clone(
-    HLTPaths = ["HLT_HIPuAK4CaloJet80Eta5p1_v*"]
+    HLTPaths = ["HLT_HIL3Mu3Eta2p5_PuAK4CaloJet40Eta2p1_v*",
+                "HLT_HIL3Mu3Eta2p5_PuAK4CaloJet60Eta2p1_v*",
+                "HLT_HIL3Mu3Eta2p5_PuAK4CaloJet80Eta2p1_v*",
+                "HLT_HIL3Mu3Eta2p5_PuAK4CaloJet100Eta2p1_v*",
+                "HLT_HIL3Mu5Eta2p5_PuAK4CaloJet40Eta2p1_v*",
+                "HLT_HIL3Mu5Eta2p5_PuAK4CaloJet60Eta2p1_v*",
+                "HLT_HIL3Mu5Eta2p5_PuAK4CaloJet80Eta2p1_v*",
+                "HLT_HIL3Mu5Eta2p5_PuAK4CaloJet100Eta2p1_v*"
+            ]
 )
 
 process.filterSequence = cms.Sequence(
